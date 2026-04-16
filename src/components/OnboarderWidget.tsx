@@ -1,7 +1,7 @@
 "use client";
 
 import { type ReactNode } from "react";
-import { OnboarderProvider } from "@onboarder/sdk/react";
+import { OnboarderWidget as SDKWidget } from "@onboarder/sdk/widget";
 
 // Public token — set NEXT_PUBLIC_ONBOARDER_TOKEN in your .env.local
 const ONBOARDER_TOKEN = process.env.NEXT_PUBLIC_ONBOARDER_TOKEN
@@ -13,18 +13,19 @@ interface Props {
 }
 
 /**
- * Client wrapper that boots the Onboarder SDK via token mode.
- * Place this around the app shell so the floating widget is available
- * on every dashboard page.
+ * Renders the page children + the floating Onboarder chat widget.
+ * SDKWidget is self-contained: it fetches its own config via the token
+ * and mounts the chat bubble in the DOM.
  */
 export function OnboarderWidget({ userId, children }: Props) {
   return (
-    <OnboarderProvider
-      token={ONBOARDER_TOKEN}
-      onboarderUrl={process.env.NEXT_PUBLIC_SUPABASE_URL!}
-      userId={userId}
-    >
+    <>
       {children}
-    </OnboarderProvider>
+      <SDKWidget
+        token={ONBOARDER_TOKEN}
+        onboarderUrl={process.env.NEXT_PUBLIC_SUPABASE_URL!}
+        userId={userId}
+      />
+    </>
   );
 }
