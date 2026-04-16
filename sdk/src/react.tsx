@@ -28,7 +28,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { OnboarderSDK, type SDKConfig, type AgentAction, type ActionResult } from "./core.js";
+import { OnboarderSDK, type SDKConfig, type AgentAction, type ActionResult } from "./core";
 
 // ─── Context ──────────────────────────────────────────────────────────────────
 

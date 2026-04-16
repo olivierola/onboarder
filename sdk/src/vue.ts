@@ -24,7 +24,7 @@
  */
 
 import { ref, onMounted, onUnmounted, type App } from "vue";
-import { OnboarderSDK, type SDKConfig, type AgentAction, type ActionResult } from "./core.js";
+import { OnboarderSDK, type SDKConfig, type AgentAction, type ActionResult } from "./core";
 
 // ─── Plugin ───────────────────────────────────────────────────────────────────
 

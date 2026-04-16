@@ -28,7 +28,7 @@ export default async function ProjectDashboardLayout({
   if (!project) redirect("/projects");
 
   return (
-    <OnboarderWidget projectId={projectId} userId={user.id}>
+    <OnboarderWidget userId={user.id}>
       <div className="flex h-screen bg-black overflow-hidden">
         <Sidebar projectId={projectId} projectName={project.name} />
         <div className="flex-1 flex flex-col min-h-0">

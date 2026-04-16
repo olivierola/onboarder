@@ -60,7 +60,7 @@
  *    sessionId = inject(OnboarderService).sessionId; // Signal<string | null>
  */
 
-import { OnboarderSDK, type SDKConfig, type AgentAction, type ActionResult } from "./core.js";
+import { OnboarderSDK, type SDKConfig, type AgentAction, type ActionResult } from "./core";
 
 // ─── Base adapter (works with Angular 2–17+ using RxJS or plain callbacks) ───
 
