@@ -1,363 +1,212 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { useParams } from "next/navigation"
-import { createClient } from "@supabase/supabase-js"
+import { createClient } from "@/lib/supabase"
 import {
   Map, ChevronDown, ChevronRight, AlertCircle,
-  Globe, Layout, Layers, Component, MousePointer,
-  Link as LinkIcon, Target, Lightbulb, Shield,
-  ArrowRight, Crosshair,
+  Globe, Layers, Component, MousePointer, Navigation,
+  Zap, Box, LayoutDashboard, Table, FormInput,
+  BookOpen, Search, X, ChevronsUpDown, Maximize2, Minimize2,
 } from "lucide-react"
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+const supabase = createClient()
 
-// ─── Types (subset of AppTree) ───────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-interface SelectorSet {
-  primary  : Record<string, string>
-  fallbacks: Array<Record<string, string>>
+type NodeType =
+  | "app" | "layout" | "module" | "page" | "section"
+  | "component" | "action" | "input" | "modal" | "form"
+  | "nav" | "table" | "card" | "button"
+
+interface CognitiveNode {
+  id              : string
+  type            : NodeType
+  intent          : string
+  description     : string
+  route?          : string | null
+  urlPattern?     : string | null
+  dynamicParams?  : string[]
+  actionsPossible?: string[]
+  prerequisites?  : string[]
+  examplePrompts? : string[]
+  children        : CognitiveNode[]
 }
 
-interface NodeContext {
-  user_goal ?: string
-  importance?: string
-  step      ?: string
+interface CognitiveTree {
+  version   : string
+  framework : string
+  repoHash  : string
+  timestamp : string
+  stats     : { totalNodes: number; totalPages: number; maxDepth: number }
+  root      : CognitiveNode
 }
 
-interface Relation {
-  type  : string
-  target: string
+interface TreeVersion {
+  version     : string
+  framework   : string
+  stats       : { totalNodes: number; totalPages: number; maxDepth: number }
+  storage_path: string
+  timestamp   : string
 }
 
-interface TreeNode {
-  type               : string
-  name               : string
-  description        : string
-  selectors          : SelectorSet
-  selector_confidence: number
-  actions           ?: string[]
-  context           ?: NodeContext
-  relations         ?: Relation[]
-  ai_hint           ?: string
-  children          ?: TreeNode[]
+// ─── Node type config ─────────────────────────────────────────────────────────
+
+const NODE_CFG: Record<string, {
+  border: string; bg: string; badge: string; dot: string
+  icon  : React.ReactNode
+}> = {
+  app      : { border:"border-slate-300",   bg:"bg-slate-50",    badge:"bg-slate-100 text-slate-600",   dot:"bg-slate-400",   icon:<Box            className="w-3.5 h-3.5 text-slate-500"/>},
+  layout   : { border:"border-slate-200",   bg:"bg-white",       badge:"bg-slate-100 text-slate-500",   dot:"bg-slate-300",   icon:<LayoutDashboard className="w-3.5 h-3.5 text-slate-400"/>},
+  module   : { border:"border-purple-200",  bg:"bg-purple-50/60",badge:"bg-purple-100 text-purple-700", dot:"bg-purple-400",  icon:<Layers         className="w-3.5 h-3.5 text-purple-500"/>},
+  page     : { border:"border-indigo-200",  bg:"bg-indigo-50/60",badge:"bg-indigo-100 text-indigo-700", dot:"bg-indigo-400",  icon:<Globe          className="w-3.5 h-3.5 text-indigo-500"/>},
+  section  : { border:"border-sky-200",     bg:"bg-sky-50/40",   badge:"bg-sky-100 text-sky-700",       dot:"bg-sky-400",     icon:<Layers         className="w-3.5 h-3.5 text-sky-500"/>},
+  component: { border:"border-teal-200",    bg:"bg-teal-50/40",  badge:"bg-teal-100 text-teal-700",     dot:"bg-teal-400",    icon:<Component      className="w-3.5 h-3.5 text-teal-500"/>},
+  action   : { border:"border-amber-200",   bg:"bg-amber-50/40", badge:"bg-amber-100 text-amber-700",   dot:"bg-amber-400",   icon:<Zap            className="w-3.5 h-3.5 text-amber-500"/>},
+  input    : { border:"border-orange-200",  bg:"bg-orange-50/40",badge:"bg-orange-100 text-orange-700", dot:"bg-orange-400",  icon:<FormInput      className="w-3.5 h-3.5 text-orange-500"/>},
+  modal    : { border:"border-rose-200",    bg:"bg-rose-50/40",  badge:"bg-rose-100 text-rose-700",     dot:"bg-rose-400",    icon:<MousePointer   className="w-3.5 h-3.5 text-rose-500"/>},
+  form     : { border:"border-violet-200",  bg:"bg-violet-50/40",badge:"bg-violet-100 text-violet-700", dot:"bg-violet-400",  icon:<FormInput      className="w-3.5 h-3.5 text-violet-500"/>},
+  nav      : { border:"border-cyan-200",    bg:"bg-cyan-50/40",  badge:"bg-cyan-100 text-cyan-700",     dot:"bg-cyan-400",    icon:<Navigation     className="w-3.5 h-3.5 text-cyan-500"/>},
+  table    : { border:"border-emerald-200", bg:"bg-emerald-50/40",badge:"bg-emerald-100 text-emerald-700",dot:"bg-emerald-400",icon:<Table          className="w-3.5 h-3.5 text-emerald-500"/>},
+  card     : { border:"border-blue-200",    bg:"bg-blue-50/40",  badge:"bg-blue-100 text-blue-700",     dot:"bg-blue-400",    icon:<Box            className="w-3.5 h-3.5 text-blue-500"/>},
+  button   : { border:"border-yellow-200",  bg:"bg-yellow-50/40",badge:"bg-yellow-100 text-yellow-700", dot:"bg-yellow-400",  icon:<MousePointer   className="w-3.5 h-3.5 text-yellow-600"/>},
 }
 
-interface TreeSection {
-  name               : string
-  description        : string
-  type               : string
-  selectors          : SelectorSet
-  selector_confidence: number
-  components         : TreeNode[]
-}
+const DEFAULT_CFG = NODE_CFG.component
 
-interface TreePage {
-  id           : string
-  route        : string
-  title        : string
-  description  : string
-  auth_required: boolean
-  sections     : TreeSection[]
-}
+// ─── Search match ─────────────────────────────────────────────────────────────
 
-interface AppRoute {
-  path        : string
-  name        : string
-  description : string
-  auth_required: boolean
-  pages       : TreePage[]
-}
-
-interface AppTree {
-  app: {
-    name       : string
-    description: string
-    base_url   : string
-    framework  : string
-  }
-  routes          : AppRoute[]
-  generated_at    : string
-  total_sections  : number
-  total_components: number
-}
-
-// ─── Importance badge ────────────────────────────────────────────────────────
-
-const IMPORTANCE_STYLE: Record<string, string> = {
-  critical: "bg-red-100 text-red-700 border-red-200",
-  high    : "bg-orange-100 text-orange-700 border-orange-200",
-  medium  : "bg-yellow-100 text-yellow-700 border-yellow-200",
-  low     : "bg-slate-100 text-slate-500 border-slate-200",
-}
-
-function ImportanceBadge({ value }: { value: string }) {
+function nodeMatches(node: CognitiveNode, q: string): boolean {
   return (
-    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${IMPORTANCE_STYLE[value] ?? IMPORTANCE_STYLE.low}`}>
-      {value}
-    </span>
+    node.intent.toLowerCase().includes(q)      ||
+    node.description.toLowerCase().includes(q) ||
+    node.id.toLowerCase().includes(q)          ||
+    (node.route?.toLowerCase().includes(q) ?? false)
   )
 }
 
-// ─── Selector display ────────────────────────────────────────────────────────
-
-function SelectorPill({ sel, confidence }: { sel: SelectorSet; confidence: number }) {
-  const [key, val] = Object.entries(sel.primary ?? {})[0] ?? []
-  if (!key) return null
-  const conf = Math.round(confidence * 100)
-  const color = conf >= 90 ? "text-emerald-600" : conf >= 70 ? "text-amber-600" : "text-slate-400"
-  return (
-    <span className="inline-flex items-center gap-1 text-[10px] font-mono bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">
-      <Crosshair className={`w-2.5 h-2.5 ${color}`} />
-      {key}=&quot;{String(val).slice(0, 30)}&quot;
-      <span className={`${color} font-semibold`}>{conf}%</span>
-    </span>
-  )
+function treeHasMatch(node: CognitiveNode, q: string): boolean {
+  if (!q) return true
+  if (nodeMatches(node, q)) return true
+  return node.children.some(c => treeHasMatch(c, q))
 }
 
-// ─── Component node ──────────────────────────────────────────────────────────
+// ─── Tree node (recursive) ───────────────────────────────────────────────────
 
-const NODE_COLOR: Record<string, string> = {
-  button  : "border-indigo-200 bg-indigo-50/50",
-  input   : "border-cyan-200 bg-cyan-50/50",
-  select  : "border-cyan-200 bg-cyan-50/50",
-  link    : "border-sky-200 bg-sky-50/50",
-  form    : "border-violet-200 bg-violet-50/50",
-  card    : "border-purple-200 bg-purple-50/50",
-  table   : "border-emerald-200 bg-emerald-50/50",
-  tabs    : "border-teal-200 bg-teal-50/50",
-  menu    : "border-orange-200 bg-orange-50/50",
-  modal   : "border-rose-200 bg-rose-50/50",
-  default : "border-slate-200 bg-white",
-}
+function TreeNodeRow({
+  node,
+  depth,
+  searchQuery,
+  forceOpen,
+}: {
+  node        : CognitiveNode
+  depth       : number
+  searchQuery : string
+  forceOpen   : boolean
+}) {
+  const cfg         = NODE_CFG[node.type] ?? DEFAULT_CFG
+  const hasChildren = node.children.length > 0
+  const hasMatch    = searchQuery ? treeHasMatch(node, searchQuery) : true
+  const selfMatch   = searchQuery ? nodeMatches(node, searchQuery) : false
 
-const NODE_ICON: Record<string, React.ReactNode> = {
-  button : <MousePointer className="w-3 h-3 text-indigo-500" />,
-  input  : <Component className="w-3 h-3 text-cyan-500" />,
-  link   : <LinkIcon className="w-3 h-3 text-sky-500" />,
-  form   : <Layers className="w-3 h-3 text-violet-500" />,
-  default: <Component className="w-3 h-3 text-slate-400" />,
-}
+  const [open, setOpen] = useState(depth < 2)
 
-function ComponentNode({ node, depth = 0 }: { node: TreeNode; depth?: number }) {
-  const [open, setOpen] = useState(depth === 0)
-  const hasChildren = (node.children?.length ?? 0) > 0
-  const color = NODE_COLOR[node.type] ?? NODE_COLOR.default
-  const icon  = NODE_ICON[node.type]  ?? NODE_ICON.default
+  // Sync with forceOpen toggle
+  useEffect(() => { setOpen(forceOpen) }, [forceOpen])
+
+  // Auto-open when search finds a descendant
+  useEffect(() => {
+    if (searchQuery && treeHasMatch(node, searchQuery)) setOpen(true)
+  }, [searchQuery, node])
+
+  if (!hasMatch) return null
+
+  const indent = depth * 20
 
   return (
-    <div className={`rounded-lg border ${color} overflow-hidden`}>
-      {/* Header row */}
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-black/[0.02] transition-colors"
+    <div>
+      {/* Row */}
+      <div
+        className={`flex items-center gap-2 py-1.5 pr-3 rounded-lg cursor-pointer
+          hover:bg-slate-100/80 transition-colors group
+          ${selfMatch && searchQuery ? "bg-indigo-50 ring-1 ring-indigo-200" : ""}
+        `}
+        style={{ paddingLeft: `${indent + 8}px` }}
+        onClick={() => hasChildren && setOpen(o => !o)}
       >
-        {hasChildren
-          ? open
-            ? <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-            : <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-          : <span className="w-3.5 h-3.5 shrink-0" />
-        }
-        {icon}
-        <span className="text-xs font-semibold text-slate-800 truncate">{node.name}</span>
-        <span className="text-[10px] text-slate-400 shrink-0">{node.type}</span>
-        {node.context?.importance && (
-          <ImportanceBadge value={node.context.importance} />
-        )}
-        <SelectorPill sel={node.selectors} confidence={node.selector_confidence} />
-      </button>
-
-      {/* Expanded body */}
-      {open && (
-        <div className="px-3 pb-3 space-y-2 border-t border-black/5">
-          {/* Description */}
-          {node.description && (
-            <p className="text-xs text-slate-600 pt-2 leading-relaxed">{node.description}</p>
-          )}
-
-          {/* Context */}
-          {node.context?.user_goal && (
-            <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
-              <Target className="w-3 h-3 text-indigo-400 shrink-0" />
-              <span>Goal:</span>
-              <span className="font-mono text-indigo-700">{node.context.user_goal}</span>
-              {node.context.step && (
-                <span className="ml-1 text-slate-400">· {node.context.step}</span>
-              )}
-            </div>
-          )}
-
-          {/* Actions */}
-          {node.actions && node.actions.length > 0 && (
-            <div className="flex items-center gap-1 flex-wrap">
-              {node.actions.map(a => (
-                <span key={a} className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-mono">{a}</span>
-              ))}
-            </div>
-          )}
-
-          {/* Relations */}
-          {node.relations && node.relations.length > 0 && (
-            <div className="flex flex-col gap-1">
-              {node.relations.map((r, i) => (
-                <div key={i} className="flex items-center gap-1.5 text-[10px]">
-                  <ArrowRight className="w-3 h-3 text-slate-300 shrink-0" />
-                  <span className="text-slate-400">{r.type}</span>
-                  <span className="font-mono text-violet-700">{r.target}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* AI hint */}
-          {node.ai_hint && (
-            <div className="flex items-start gap-1.5 text-[10px] bg-amber-50 border border-amber-100 rounded px-2 py-1.5">
-              <Lightbulb className="w-3 h-3 text-amber-500 shrink-0 mt-0.5" />
-              <span className="text-amber-800 leading-relaxed">{node.ai_hint}</span>
-            </div>
-          )}
-
-          {/* Fallback selectors */}
-          {node.selectors.fallbacks?.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              <span className="text-[10px] text-slate-400">fallbacks:</span>
-              {node.selectors.fallbacks.slice(0, 3).map((f, i) => {
-                const [k, v] = Object.entries(f)[0] ?? []
-                return (
-                  <span key={i} className="text-[10px] font-mono bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">
-                    {k}=&quot;{String(v).slice(0, 20)}&quot;
-                  </span>
-                )
-              })}
-            </div>
-          )}
-
-          {/* Children */}
-          {hasChildren && (
-            <div className="space-y-1.5 pt-1 pl-3 border-l-2 border-slate-100">
-              {node.children!.map((child, i) => (
-                <ComponentNode key={i} node={child} depth={depth + 1} />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ─── Section ─────────────────────────────────────────────────────────────────
-
-const SECTION_COLOR: Record<string, string> = {
-  header  : "bg-blue-50 border-blue-200",
-  sidebar : "bg-slate-50 border-slate-200",
-  footer  : "bg-slate-50 border-slate-200",
-  modal   : "bg-rose-50 border-rose-200",
-  section : "bg-white border-slate-200",
-}
-
-const SECTION_ICON: Record<string, React.ReactNode> = {
-  header  : <Layout className="w-3.5 h-3.5 text-blue-500" />,
-  sidebar : <Layers className="w-3.5 h-3.5 text-slate-500" />,
-  footer  : <Layout className="w-3.5 h-3.5 text-slate-400" />,
-  modal   : <Component className="w-3.5 h-3.5 text-rose-500" />,
-  section : <Layers className="w-3.5 h-3.5 text-indigo-400" />,
-}
-
-function SectionNode({ section }: { section: TreeSection }) {
-  const [open, setOpen] = useState(true)
-  const color = SECTION_COLOR[section.type] ?? SECTION_COLOR.section
-  const icon  = SECTION_ICON[section.type]  ?? SECTION_ICON.section
-
-  return (
-    <div className={`rounded-xl border ${color} overflow-hidden`}>
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-black/[0.02] transition-colors"
-      >
-        {open
-          ? <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
-          : <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
-        }
-        {icon}
-        <span className="text-sm font-semibold text-slate-800">{section.name}</span>
-        <span className="text-xs text-slate-400">{section.type}</span>
-        <span className="ml-auto text-xs text-slate-400 shrink-0">
-          {section.components.length} composant{section.components.length > 1 ? "s" : ""}
+        {/* Expand icon */}
+        <span className="w-4 h-4 shrink-0 flex items-center justify-center">
+          {hasChildren
+            ? open
+              ? <ChevronDown  className="w-3.5 h-3.5 text-slate-400" />
+              : <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+            : <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+          }
         </span>
-        <SelectorPill sel={section.selectors} confidence={section.selector_confidence} />
-      </button>
 
-      {open && (
-        <div className="px-4 pb-4 space-y-2 border-t border-black/5">
-          {section.description && (
-            <p className="text-xs text-slate-500 pt-3 pb-1 leading-relaxed">{section.description}</p>
+        {/* Type icon */}
+        {cfg.icon}
+
+        {/* Intent */}
+        <span className={`text-sm font-medium flex-1 truncate ${selfMatch && searchQuery ? "text-indigo-900" : "text-slate-800"}`}>
+          {node.intent}
+        </span>
+
+        {/* Route badge */}
+        {node.route && (
+          <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded shrink-0 max-w-[180px] truncate hidden sm:block">
+            {node.route}
+          </span>
+        )}
+
+        {/* Type badge */}
+        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${cfg.badge}`}>
+          {node.type}
+        </span>
+
+        {/* Children count */}
+        {hasChildren && (
+          <span className="text-[10px] text-slate-400 shrink-0">{node.children.length}</span>
+        )}
+      </div>
+
+      {/* Detail strip (shown when leaf or first open) */}
+      {open && !hasChildren && node.description && (
+        <div
+          className="ml-1 mr-3 mb-1 px-3 py-2 bg-slate-50 border border-slate-100 rounded-lg text-xs text-slate-500 leading-relaxed"
+          style={{ marginLeft: `${indent + 32}px` }}
+        >
+          <p>{node.description}</p>
+          {node.actionsPossible && node.actionsPossible.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-1.5">
+              {node.actionsPossible.map(a => (
+                <span key={a} className="bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded font-mono text-[10px]">{a}</span>
+              ))}
+            </div>
           )}
-          <div className="space-y-2">
-            {section.components.map((comp, i) => (
-              <ComponentNode key={i} node={comp} depth={0} />
-            ))}
-          </div>
+          {node.examplePrompts && node.examplePrompts.length > 0 && (
+            <ul className="mt-1.5 space-y-0.5">
+              {node.examplePrompts.slice(0, 2).map((p, i) => (
+                <li key={i} className="text-indigo-600 text-[10px]">› {p}</li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
-    </div>
-  )
-}
 
-// ─── Route / Page ─────────────────────────────────────────────────────────────
-
-function RouteNode({ route }: { route: AppRoute }) {
-  const [open, setOpen] = useState(false)
-  const page = route.pages[0]
-  const sectionCount   = page?.sections?.length ?? 0
-  const componentCount = page?.sections?.reduce((n, s) => n + s.components.length, 0) ?? 0
-
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-      {/* Route header */}
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center gap-3 px-5 py-4 text-left hover:bg-slate-50 transition-colors"
-      >
-        {open
-          ? <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
-          : <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
-        }
-        <Globe className="w-4 h-4 text-indigo-500 shrink-0" />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-slate-900">{route.name}</span>
-            <span className="text-xs font-mono text-slate-400">{route.path}</span>
-            {route.auth_required && (
-              <span className="inline-flex items-center gap-1 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded border border-amber-200">
-                <Shield className="w-2.5 h-2.5" /> auth
-              </span>
-            )}
-          </div>
-          {route.description && (
-            <p className="text-xs text-slate-400 mt-0.5 truncate">{route.description}</p>
-          )}
-        </div>
-        <div className="flex items-center gap-3 shrink-0 text-xs text-slate-400">
-          <span>{sectionCount} sections</span>
-          <span>{componentCount} composants</span>
-        </div>
-      </button>
-
-      {/* Page sections */}
-      {open && page && (
-        <div className="px-5 pb-5 space-y-3 border-t border-slate-100">
-          {page.description && (
-            <p className="text-xs text-slate-500 pt-3 leading-relaxed">{page.description}</p>
-          )}
-          {page.sections.length === 0 && (
-            <p className="text-xs text-slate-400 italic pt-3">Aucune section détectée pour cette page.</p>
-          )}
-          {page.sections.map((section, i) => (
-            <SectionNode key={i} section={section} />
+      {/* Children */}
+      {open && hasChildren && (
+        <div className={`border-l border-slate-200 ml-${Math.min(depth + 2, 8)}`}
+          style={{ marginLeft: `${indent + 18}px` }}
+        >
+          {node.children.map(child => (
+            <TreeNodeRow
+              key={child.id}
+              node={child}
+              depth={depth + 1}
+              searchQuery={searchQuery}
+              forceOpen={forceOpen}
+            />
           ))}
         </div>
       )}
@@ -365,41 +214,63 @@ function RouteNode({ route }: { route: AppRoute }) {
   )
 }
 
-// ─── Main page ───────────────────────────────────────────────────────────────
+// ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function MapPage() {
   const { projectId } = useParams<{ projectId: string }>()
-  const [tree, setTree]     = useState<AppTree | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError]   = useState<string | null>(null)
+  const [tree, setTree]           = useState<CognitiveTree | null>(null)
+  const [version, setVersion]     = useState<TreeVersion | null>(null)
+  const [loading, setLoading]     = useState(true)
+  const [error, setError]         = useState<string | null>(null)
+  const [search, setSearch]       = useState("")
+  const [allOpen, setAllOpen]     = useState(false)
 
   useEffect(() => {
     async function load() {
       setLoading(true)
-      const { data, error: err } = await supabase
-        .from("onboarder_manifests")
-        .select("tree, updated_at")
+
+      // 1. Latest tree version metadata
+      const { data: v, error: vErr } = await supabase
+        .from("cognitive_tree_versions")
+        .select("version, framework, stats, storage_path, timestamp")
         .eq("project_id", projectId)
+        .order("timestamp", { ascending: false })
+        .limit(1)
         .maybeSingle()
 
-      if (err) {
-        setError(err.message)
-      } else if (!data?.tree || Object.keys(data.tree).length === 0) {
-        setError("Aucune carte générée. Lancez un scan de code source d'abord.")
-      } else {
-        setTree(data.tree as AppTree)
+      if (vErr) { setError(vErr.message); setLoading(false); return }
+      if (!v)   { setError("Aucune carte — lancez un scan de code source."); setLoading(false); return }
+
+      // 2. Signed URL → fetch JSON directly
+      const { data: signed, error: sErr } = await supabase
+        .storage.from("cognitive-trees")
+        .createSignedUrl(v.storage_path, 3600)
+
+      if (sErr || !signed?.signedUrl) {
+        setError(sErr?.message ?? "Impossible d'obtenir l'URL de téléchargement")
+        setLoading(false)
+        return
       }
+
+      const res = await fetch(signed.signedUrl)
+      if (!res.ok) { setError(`Téléchargement échoué: ${res.statusText}`); setLoading(false); return }
+
+      const treeData: CognitiveTree = await res.json()
+      setVersion(v)
+      setTree(treeData)
       setLoading(false)
     }
     load()
   }, [projectId])
+
+  const toggleAll = useCallback(() => setAllOpen(o => !o), [])
 
   if (loading) {
     return (
       <div className="p-8 flex items-center justify-center text-slate-400">
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-          <span className="text-sm">Chargement de la carte…</span>
+          <span className="text-sm">Chargement de l'arbre cognitif…</span>
         </div>
       </div>
     )
@@ -417,7 +288,7 @@ export default function MapPage() {
   }
 
   return (
-    <div className="p-6 space-y-6 min-h-full bg-slate-50">
+    <div className="p-6 space-y-4 min-h-full bg-slate-50">
 
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -425,43 +296,74 @@ export default function MapPage() {
           <div className="flex items-center gap-2">
             <Map className="w-5 h-5 text-indigo-500" />
             <h1 className="text-2xl font-bold text-slate-900">SaaS Map</h1>
+            <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded font-mono">
+              {version?.framework}
+            </span>
           </div>
           <p className="text-sm text-slate-500 mt-0.5">
-            {tree.app.name} · {tree.routes.length} routes · {tree.total_sections} sections · {tree.total_components} composants
+            {version?.stats?.totalNodes?.toLocaleString()} nœuds ·{" "}
+            {version?.stats?.totalPages} pages · profondeur {version?.stats?.maxDepth} ·{" "}
+            v{version?.version?.replace("sha:", "").slice(0, 8)}
           </p>
         </div>
-        <div className="flex flex-col items-end gap-1">
-          <span className="text-xs text-slate-400 font-mono">{tree.app.framework}</span>
-          {tree.app.base_url && (
-            <span className="text-xs text-slate-400 font-mono">{tree.app.base_url}</span>
-          )}
-          <span className="text-[10px] text-slate-300">
-            Généré {new Date(tree.generated_at).toLocaleString("fr-FR")}
-          </span>
+
+        <div className="flex items-center gap-2 text-xs text-slate-400">
+          <span>{new Date(version?.timestamp ?? "").toLocaleString("fr-FR")}</span>
         </div>
       </div>
 
-      {/* Legend */}
-      <div className="flex flex-wrap gap-3 text-[11px] text-slate-500">
-        {[
-          { label: "Route",     color: "bg-white border-slate-200",   icon: <Globe className="w-3 h-3 text-indigo-500" /> },
-          { label: "Section",   color: "bg-slate-50 border-slate-200", icon: <Layers className="w-3 h-3 text-slate-500" /> },
-          { label: "Composant", color: "bg-white border-slate-200",    icon: <Component className="w-3 h-3 text-slate-400" /> },
-          { label: "Critique",  color: "bg-red-100 border-red-200",    icon: null },
-          { label: "Élevé",     color: "bg-orange-100 border-orange-200", icon: null },
-        ].map(({ label, color, icon }) => (
-          <div key={label} className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border ${color}`}>
-            {icon}
-            {label}
-          </div>
-        ))}
+      {/* Toolbar */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {/* Search */}
+        <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-sm flex-1 min-w-[200px] max-w-sm">
+          <Search className="w-4 h-4 text-slate-400 shrink-0" />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Rechercher un nœud…"
+            className="outline-none bg-transparent w-full text-sm text-slate-700 placeholder:text-slate-400"
+          />
+          {search && (
+            <button onClick={() => setSearch("")}>
+              <X className="w-3.5 h-3.5 text-slate-400 hover:text-slate-600" />
+            </button>
+          )}
+        </div>
+
+        {/* Expand / collapse all */}
+        <button
+          onClick={toggleAll}
+          className="flex items-center gap-1.5 text-xs bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-sm hover:bg-slate-50 transition-colors text-slate-600"
+        >
+          {allOpen
+            ? <><Minimize2 className="w-3.5 h-3.5" /> Tout réduire</>
+            : <><Maximize2 className="w-3.5 h-3.5" /> Tout déplier</>
+          }
+        </button>
+
+        {/* Legend */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {(["page","section","component","action","modal"] as NodeType[]).map(t => {
+            const c = NODE_CFG[t]
+            return (
+              <span key={t} className={`flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg border ${c.border} ${c.bg}`}>
+                {c.icon}{t}
+              </span>
+            )
+          })}
+        </div>
       </div>
 
-      {/* Routes tree */}
-      <div className="space-y-4">
-        {tree.routes.map((route, i) => (
-          <RouteNode key={i} route={route} />
-        ))}
+      {/* Tree */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="p-3">
+          <TreeNodeRow
+            node={tree.root}
+            depth={0}
+            searchQuery={search.toLowerCase().trim()}
+            forceOpen={allOpen}
+          />
+        </div>
       </div>
 
     </div>
