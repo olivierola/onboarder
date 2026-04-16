@@ -2,17 +2,14 @@
 
 import { useEffect, useState, useMemo } from "react"
 import { useParams } from "next/navigation"
-import { createClient } from "@supabase/supabase-js"
+import { createClient } from "@/lib/supabase"
 import {
   BookOpen, Search, X, ChevronRight, Layers,
   FileText, Zap, MousePointer, Navigation, Component,
   AlertCircle, Box, Table, FormInput, LayoutDashboard,
 } from "lucide-react"
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+const supabase = createClient()
 
 // ─── Types (mirrors CognitiveNode from _shared/cognitive-tree.ts) ────────────
 
