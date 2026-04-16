@@ -265,28 +265,39 @@ export default function KnowledgePage() {
       setLoading(true)
       setError(null)
 
-      // 1. Get session token
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { setError("Non authentifié"); setLoading(false); return }
+      // 1. Fetch latest tree version metadata (RLS migration 026 grants access)
+      const { data: version, error: vErr } = await supabase
+        .from("cognitive_tree_versions")
+        .select("id, version, framework, stats, storage_path, timestamp")
+        .eq("project_id", projectId)
+        .order("timestamp", { ascending: false })
+        .limit(1)
+        .maybeSingle()
 
-      // 2. Fetch tree via API route (server reads Storage with service role)
-      const res = await fetch(`/api/cognitive-tree/${projectId}`, {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      })
-
-      if (res.status === 404) {
+      if (vErr) { setError(`Erreur DB: ${vErr.message}`); setLoading(false); return }
+      if (!version) {
         setError("Aucun arbre cognitif — lancez un scan de code source.")
         setLoading(false)
         return
       }
-      if (!res.ok) {
-        const { error: msg } = await res.json().catch(() => ({ error: res.statusText }))
-        setError(`Erreur: ${msg}`)
+
+      // 2. Create a signed URL (60 min) so the browser downloads directly from Storage
+      const { data: signed, error: sErr } = await supabase
+        .storage
+        .from("cognitive-trees")
+        .createSignedUrl(version.storage_path, 3600)
+
+      if (sErr || !signed?.signedUrl) {
+        setError(`Erreur Storage: ${sErr?.message ?? "signed URL manquante"}`)
         setLoading(false)
         return
       }
 
-      const { version, tree: treeData } = await res.json()
+      // 3. Fetch the tree JSON (~2 MB) directly from the CDN
+      const res = await fetch(signed.signedUrl)
+      if (!res.ok) { setError(`Téléchargement échoué: ${res.statusText}`); setLoading(false); return }
+
+      const treeData: CognitiveTree = await res.json()
       setTreeVersion(version)
       setTree(treeData)
       setStack([{ label: "Knowledge Base", node: treeData.root }])
