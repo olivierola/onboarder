@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "target": "ES2017",
     "lib": [
       "dom",
       "dom.iterable",
@@ -18,7 +19,12 @@
     "jsx": "preserve",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@onboarder/sdk":          ["./sdk/src/index.ts"],
+      "@onboarder/sdk/react":    ["./sdk/src/react.tsx"],
+      "@onboarder/sdk/vue":      ["./sdk/src/vue.ts"],
+      "@onboarder/sdk/angular":  ["./sdk/src/angular.ts"],
+      "@onboarder/sdk/widget":   ["./sdk/src/widget.tsx"]
     },
     "plugins": [
       {
