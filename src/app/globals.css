@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-slate-50 text-slate-900;
+}
+
+/* ─── Sidebar dark ───────────────────────────────────────────────────────── */
+@layer components {
+  .sidebar-dark {
+    position: relative;
+    /* Radial gradient: violet au centre, noir sur tous les bords */
+    background:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.72' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E"),
+      radial-gradient(ellipse 80% 50% at 50% 50%, #0d061e 0%, #070213 35%, #020008 65%, #000000 100%);
+    background-blend-mode: soft-light, normal;
+    background-size: 200px 200px, cover;
+  }
+}
+
+/* ─── Content scrollbar — hidden ─────────────────────────────────────────── */
+@layer components {
+  .content-scroll {
+    scrollbar-width: none;
+  }
+
+  .content-scroll::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ─── Dark violet / black gradient with grain noise ──────────────────────── */
+@layer components {
+  .btn-dark {
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(145deg, #4c1d95 0%, #2d0a6e 40%, #0c0012 100%);
+    color: white;
+    transition: filter 0.15s ease, transform 0.1s ease;
+  }
+
+  .btn-dark:hover:not(:disabled) {
+    filter: brightness(1.12);
+  }
+
+  .btn-dark:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+
+  .btn-dark:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* Grain texture overlay */
+  .btn-dark::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+    opacity: 0.09;
+    mix-blend-mode: overlay;
+  }
+}
